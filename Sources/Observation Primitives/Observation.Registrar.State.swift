@@ -1,29 +1,31 @@
 // Observation.Registrar.State.swift
 
-public import Tagged_Primitives
+import Tagged_Primitives
 
 extension Observation.Registrar {
-    /// The lock-protected mutable state of an `Extent`.
+    /// The lock-protected mutable state of the registrar.
     ///
     /// Holds the bidirectional observer index (PropertyID → observer IDs
     /// + observer ID → metadata) plus the monotonic observer-ID
-    /// allocator. Accessed only through the owning `Extent`'s lock.
+    /// allocator. Accessed only through the owning
+    /// `Ownership.Shared<Mutex<State>>` extent's `Mutex<State>`.
     ///
-    /// Copyable because: this struct is a stored property of the
-    /// reference-typed `Extent` and never escapes the lock-protected
-    /// scope. Its sub-fields (`Dictionary`, `UInt64`) are themselves
-    /// Copyable and stdlib-required to be so for storage in
-    /// `Dictionary` values.
+    /// Copyable because: this struct is the protected `Value` of a
+    /// stdlib `Synchronization.Mutex<State>`; the Mutex's `withLock`
+    /// hands out `inout State` references, which Swift's exclusivity
+    /// model already enforces. Its sub-fields (`Dictionary`, `UInt64`)
+    /// are themselves Copyable and stdlib-required to be so for
+    /// storage in `Dictionary` values.
     struct State {
-        /// Index from PropertyID to the set of observer IDs watching
-        /// that property.
-        var lookups: [Observation.Property.ID: Set<UInt64>] = [:]
+        /// Index from PropertyID to the set of subscription IDs
+        /// watching that property.
+        var lookups: [Observation.Property.ID: Set<Observation.Subscription.ID>] = [:]
 
-        /// Index from observer ID to the observer's metadata
+        /// Index from subscription ID to the observer's metadata
         /// (callbacks + watched property set).
-        var observers: [UInt64: Observer] = [:]
+        var observers: [Observation.Subscription.ID: Observer] = [:]
 
-        /// Monotonic observer-ID allocator.
-        var nextObserverID: UInt64 = 0
+        /// Monotonic subscription-ID allocator.
+        var nextSubscriptionID: UInt64 = 0
     }
 }

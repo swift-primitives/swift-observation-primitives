@@ -16,21 +16,36 @@ let package = Package(
             name: "Observation Primitives",
             targets: ["Observation Primitives"]
         ),
+        .library(
+            name: "Observation Primitives Test Support",
+            targets: ["Observation Primitives Test Support"]
+        ),
     ],
     dependencies: [
-        .package(path: "../swift-tagged-primitives"),
+        .package(url: "https://github.com/swift-primitives/swift-tagged-primitives.git", branch: "main"),
+        .package(url: "https://github.com/swift-primitives/swift-ownership-primitives.git", branch: "main"),
     ],
     targets: [
         .target(
             name: "Observation Primitives",
             dependencies: [
                 .product(name: "Tagged Primitives", package: "swift-tagged-primitives"),
+                .product(name: "Ownership Shared Primitives", package: "swift-ownership-primitives"),
             ]
+        ),
+        .target(
+            name: "Observation Primitives Test Support",
+            dependencies: [
+                "Observation Primitives",
+                .product(name: "Tagged Primitives Test Support", package: "swift-tagged-primitives"),
+            ],
+            path: "Tests/Support"
         ),
         .testTarget(
             name: "Observation Primitives Tests",
             dependencies: [
                 "Observation Primitives",
+                "Observation Primitives Test Support",
             ]
         ),
     ],

@@ -1,24 +1,23 @@
 // Observation.Registrar Tests.swift
 
-import Testing
-import Foundation
+import Synchronization
 import Tagged_Primitives
+import Testing
+
 @testable import Observation_Primitives
 
-/// Thread-safe holder for mutable test state captured in @Sendable closures.
+/// Thread-safe holder for mutable test state captured in `@Sendable` closures.
 final class Box<T: Sendable>: @unchecked Sendable {
-    private var _value: T
-    private let lock = NSObject()
+    private let _storage: Mutex<T>
 
-    init(_ initial: T) { self._value = initial }
+    init(_ initial: T) { self._storage = Mutex(initial) }
 
     var value: T {
-        get { objc_sync_enter(lock); defer { objc_sync_exit(lock) }; return _value }
+        _storage.withLock { $0 }
     }
 
     func mutate(_ body: (inout T) -> Void) {
-        objc_sync_enter(lock); defer { objc_sync_exit(lock) }
-        body(&_value)
+        _storage.withLock { body(&$0) }
     }
 }
 
@@ -35,7 +34,7 @@ struct RegistrarTests {
 extension RegistrarTests.Subscribe {
 
     @Test
-    func `subscribe returns unique observer IDs`() {
+    func `subscribe returns unique subscription IDs`() {
         let registrar = Observation.Registrar()
         let id1 = registrar.subscribe(to: [.init(0)])
         let id2 = registrar.subscribe(to: [.init(0)])
@@ -52,7 +51,7 @@ extension RegistrarTests.Subscribe {
         let id = registrar.subscribe(
             to: [.init(0), .init(1), .init(2)],
             willSet: { propertyID in
-                firedFor.mutate { $0.insert(propertyID.rawValue) }
+                firedFor.mutate { $0.insert(propertyID.underlying) }
             }
         )
         registrar.willSet(.init(0))
@@ -130,7 +129,7 @@ extension RegistrarTests.DidSet {
         let captured = Box<UInt32?>(nil)
         let id = registrar.subscribe(
             to: [.init(42)],
-            didSet: { propertyID in captured.mutate { $0 = propertyID.rawValue } }
+            didSet: { propertyID in captured.mutate { $0 = propertyID.underlying } }
         )
         registrar.didSet(.init(42))
         #expect(captured.value == 42)
@@ -181,7 +180,7 @@ extension RegistrarTests.WithMutation {
     @Test
     func `withMutation propagates errors and still fires didSet`() {
         let registrar = Observation.Registrar()
-        struct TestError: Error {}
+        struct TestError: Swift.Error {}
         let didSetFired = Box(false)
         let id = registrar.subscribe(
             to: [.init(0)],
@@ -189,7 +188,7 @@ extension RegistrarTests.WithMutation {
         )
 
         do {
-            try registrar.withMutation(of: .init(0)) { () throws(TestError) -> Void in
+            try registrar.withMutation(of: .init(0)) { () throws(TestError) in
                 throw TestError()
             }
             Issue.record("Expected error to propagate")
@@ -221,8 +220,9 @@ extension RegistrarTests.Lifetime {
 
 extension RegistrarTests.NoncopyableSubject {
 
-    /// A ~Copyable Subject conforming to Observable —
-    /// the documented gap in Apple's class-only @Observable.
+    /// A ~Copyable Subject conforming to `Observable`.
+    ///
+    /// The documented gap in Apple's class-only `@Observable`.
     struct Counter: ~Copyable, Observable {
         let _$registrar: Observation.Registrar
         var _raw: Int

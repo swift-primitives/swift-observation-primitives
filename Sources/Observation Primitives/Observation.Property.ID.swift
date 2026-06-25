@@ -35,7 +35,7 @@ extension Observation.Property {
 
 // MARK: - Convenience initializer
 
-extension Tagged where Tag == Observation.Property, RawValue == UInt32 {
+extension Tagged where Tag == Observation.Property, Underlying == UInt32 {
     /// Creates an `Observation.Property.ID` from its raw integer value.
     ///
     /// The `Tagged` design reserves the unlabeled-init path for domain-
@@ -45,6 +45,6 @@ extension Tagged where Tag == Observation.Property, RawValue == UInt32 {
     /// constructor without ceremony.
     @inlinable
     public init(_ rawValue: UInt32) {
-        self.init(__unchecked: (), rawValue)
+        self.init(_unchecked: rawValue)
     }
 }

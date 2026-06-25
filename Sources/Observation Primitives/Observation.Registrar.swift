@@ -1,36 +1,43 @@
 // Observation.Registrar.swift
 
+public import Ownership_Shared_Primitives
+import Synchronization
 public import Tagged_Primitives
 
 extension Observation {
 
-    /// Lock-protected registrar of (PropertyID -> observer-IDs)
-    /// bindings. The struct holds a heap-allocated extent (a class)
-    /// so that copies share state — but copies of the Subject that
-    /// owns the registrar are themselves prevented when the Subject
-    /// is `~Copyable`, sidestepping the copy-on-write ambiguity that
-    /// motivated Apple's class-only restriction (per SE-0395 second-
-    /// review thread #119).
+    /// Lock-protected registrar of (PropertyID -> SubscriptionID) bindings.
+    ///
+    /// The struct holds a heap-allocated extent
+    /// (`Ownership.Shared<Mutex<State>>`) so that copies share state —
+    /// but copies of the Subject that owns the registrar are themselves
+    /// prevented when the Subject is `~Copyable`, sidestepping the
+    /// copy-on-write ambiguity that motivated Apple's class-only
+    /// restriction (per SE-0395 second-review thread #119).
     ///
     /// ## Internal shape
     ///
-    /// Mirrors Apple's `ObservationRegistrar` design:
-    /// - struct → heap-allocated ``Observation/Registrar/Extent`` class (CoW shape)
-    /// - bidirectional index in ``Observation/Registrar/State``:
-    ///   `[PropertyID: Set<observerID>]` lookups +
-    ///   `[observerID: Observer]` observers
-    /// - monotonic ``Observation/Registrar/Observer`` ID allocator (UInt64)
-    /// - platform-specific lock primitive (`os_unfair_lock` on
-    ///   Darwin, `pthread_mutex_t` on Linux, `SRWLOCK` on Windows)
+    /// Mirrors Apple's `ObservationRegistrar` design but uses stdlib
+    /// `Synchronization.Mutex<State>` for thread-safe access — no
+    /// platform imports, no platform C types per [PLAT-ARCH-008c]:
+    /// - struct → `Ownership.Shared<Mutex<State>>` heap-allocated extent
+    ///   (CoW shape; ARC-shared across struct copies)
+    /// - bidirectional index in ``Observation/Registrar/State``,
+    ///   protected by `Mutex<State>`:
+    ///   `[Property.ID: Set<Subscription.ID>]` lookups +
+    ///   `[Subscription.ID: Observer]` observers
+    /// - monotonic ``Observation/Subscription/ID`` allocator (UInt64)
     ///
     /// Replaces Apple's `(ObjectIdentifier(subject), AnyKeyPath)`
-    /// keying with `PropertyID` keying — the registrar's heap-extent
-    /// IS the Subject's stable identity (each Subject owns one).
+    /// keying with ``Observation/Property/ID`` keying — the
+    /// registrar's heap-extent IS the Subject's stable identity (each
+    /// Subject owns one).
     public struct Registrar: Sendable {
-        let _extent: Extent
+        let _extent: Ownership.Shared<Mutex<State>>
 
+        /// Creates an empty registrar with a fresh heap-allocated state extent.
         public init() {
-            self._extent = Extent()
+            self._extent = Ownership.Shared(Mutex(State()))
         }
     }
 }
@@ -41,12 +48,13 @@ extension Observation.Registrar {
     /// Records a property access.
     ///
     /// Currently a no-op — no thread-local tracking context is
-    /// established yet. Callers may invoke it for forward-compatibility
-    /// with the future `withObservationTracking` primitive; the same
-    /// call site will then register the property access with the
-    /// active tracking context.
+    /// established yet at L1. Callers may invoke it for forward-
+    /// compatibility with a future `withObservationTracking` primitive
+    /// (planned for L3 `swift-observations`); the same call site will
+    /// then register the property access with the active tracking
+    /// context.
     public func access(_ propertyID: Observation.Property.ID) {
-        // No-op today. Future tracking primitive will inspect the
+        // No-op today. L3 tracking primitive will inspect the
         // thread-local tracking context and append
         // (registrar-extent, propertyID) to its access list.
         _ = propertyID
@@ -56,12 +64,12 @@ extension Observation.Registrar {
     /// mutation is about to occur.
     public func willSet(_ propertyID: Observation.Property.ID) {
         let callbacks: [@Sendable (Observation.Property.ID) -> Void] =
-            _extent.lock.withLock {
-                guard let observerIDs = _extent.state.lookups[propertyID] else {
+            _extent.value.withLock { state in
+                guard let subscriptionIDs = state.lookups[propertyID] else {
                     return []
                 }
-                return observerIDs.compactMap { id in
-                    _extent.state.observers[id]?.willSet
+                return subscriptionIDs.compactMap { id in
+                    state.observers[id]?.willSet
                 }
             }
         for callback in callbacks {
@@ -73,12 +81,12 @@ extension Observation.Registrar {
     /// mutation has just occurred.
     public func didSet(_ propertyID: Observation.Property.ID) {
         let callbacks: [@Sendable (Observation.Property.ID) -> Void] =
-            _extent.lock.withLock {
-                guard let observerIDs = _extent.state.lookups[propertyID] else {
+            _extent.value.withLock { state in
+                guard let subscriptionIDs = state.lookups[propertyID] else {
                     return []
                 }
-                return observerIDs.compactMap { id in
-                    _extent.state.observers[id]?.didSet
+                return subscriptionIDs.compactMap { id in
+                    state.observers[id]?.didSet
                 }
             }
         for callback in callbacks {
@@ -88,12 +96,16 @@ extension Observation.Registrar {
 
     /// Wraps a mutation in willSet/didSet bookkeeping.
     ///
+    /// Fires `willSet(propertyID)` before `body` runs and `didSet(propertyID)`
+    /// after `body` returns or throws, matching Apple's
+    /// `ObservationRegistrar.withMutation` semantics.
+    ///
     /// - Parameters:
     ///   - propertyID: The property being mutated.
-    ///   - body: The mutation closure. Throws of type `E` are
-    ///     propagated; in either path, `didSet` fires (matching
-    ///     Apple's `ObservationRegistrar.withMutation` semantics).
-    public func withMutation<R: ~Copyable, E: Error>(
+    ///   - body: The mutation closure to run between the notifications.
+    /// - Returns: The value produced by `body`.
+    /// - Throws: The typed error `E` if `body` throws; `didSet` still fires.
+    public func withMutation<R: ~Copyable, E: Swift.Error>(
         of propertyID: Observation.Property.ID,
         _ body: () throws(E) -> R
     ) throws(E) -> R {
@@ -108,49 +120,50 @@ extension Observation.Registrar {
 extension Observation.Registrar {
     /// Registers an observer for the given properties.
     ///
-    /// Returns an opaque observer ID that the caller MUST retain to
-    /// unregister later. Currently the raw `UInt64` ID is returned;
-    /// a future addition will replace this with a `~Copyable`
-    /// `Token` that auto-unregisters on `consume`.
+    /// Returns an opaque ``Observation/Subscription/ID`` that the
+    /// caller MUST retain to unregister later. A future addition
+    /// (planned for L3 `swift-observations`) will accompany this with
+    /// a `~Copyable` `Subscription.Token` that auto-unregisters on
+    /// `consume`.
     ///
     /// - Parameters:
     ///   - properties: The set of PropertyIDs to watch.
     ///   - willSet: Optional callback for pre-mutation notification.
     ///   - didSet: Optional callback for post-mutation notification.
-    /// - Returns: Opaque observer ID for later unregistration.
+    /// - Returns: Opaque subscription ID for later unregistration.
     public func subscribe(
         to properties: Set<Observation.Property.ID>,
         willSet: (@Sendable (Observation.Property.ID) -> Void)? = nil,
         didSet: (@Sendable (Observation.Property.ID) -> Void)? = nil
-    ) -> UInt64 {
-        _extent.lock.withLock {
-            let id = _extent.state.nextObserverID
-            _extent.state.nextObserverID &+= 1
+    ) -> Observation.Subscription.ID {
+        _extent.value.withLock { state in
+            let id = Observation.Subscription.ID(state.nextSubscriptionID)
+            state.nextSubscriptionID &+= 1
 
-            _extent.state.observers[id] = Observer(
+            state.observers[id] = Observer(
                 properties: properties,
                 willSet: willSet,
                 didSet: didSet
             )
 
             for propertyID in properties {
-                _extent.state.lookups[propertyID, default: []].insert(id)
+                state.lookups[propertyID, default: []].insert(id)
             }
 
             return id
         }
     }
 
-    /// Unregisters the observer with the given ID.
-    public func unsubscribe(_ observerID: UInt64) {
-        _extent.lock.withLock {
-            guard let observer = _extent.state.observers.removeValue(forKey: observerID) else {
+    /// Unregisters the subscription with the given ID.
+    public func unsubscribe(_ subscriptionID: Observation.Subscription.ID) {
+        _extent.value.withLock { state in
+            guard let observer = state.observers.removeValue(forKey: subscriptionID) else {
                 return
             }
             for propertyID in observer.properties {
-                _extent.state.lookups[propertyID]?.remove(observerID)
-                if _extent.state.lookups[propertyID]?.isEmpty == true {
-                    _extent.state.lookups[propertyID] = nil
+                state.lookups[propertyID]?.remove(subscriptionID)
+                if state.lookups[propertyID]?.isEmpty == true {
+                    state.lookups[propertyID] = nil
                 }
             }
         }
