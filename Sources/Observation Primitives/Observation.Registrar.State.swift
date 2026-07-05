@@ -8,7 +8,7 @@ extension Observation.Registrar {
     /// Holds the bidirectional observer index (PropertyID → observer IDs
     /// + observer ID → metadata) plus the monotonic observer-ID
     /// allocator. Accessed only through the owning
-    /// `Ownership.Shared<Mutex<State>>` extent's `Mutex<State>`.
+    /// `Ownership.Immutable<Mutex<State>>` extent's `Mutex<State>`.
     ///
     /// Copyable because: this struct is the protected `Value` of a
     /// stdlib `Synchronization.Mutex<State>`; the Mutex's `withLock`

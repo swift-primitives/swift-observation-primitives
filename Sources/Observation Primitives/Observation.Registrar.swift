@@ -1,6 +1,6 @@
 // Observation.Registrar.swift
 
-public import Ownership_Shared_Primitives
+public import Ownership_Immutable_Primitives
 import Synchronization
 public import Tagged_Primitives
 
@@ -9,7 +9,7 @@ extension Observation {
     /// Lock-protected registrar of (PropertyID -> SubscriptionID) bindings.
     ///
     /// The struct holds a heap-allocated extent
-    /// (`Ownership.Shared<Mutex<State>>`) so that copies share state —
+    /// (`Ownership.Immutable<Mutex<State>>`) so that copies share state —
     /// but copies of the Subject that owns the registrar are themselves
     /// prevented when the Subject is `~Copyable`, sidestepping the
     /// copy-on-write ambiguity that motivated Apple's class-only
@@ -20,7 +20,7 @@ extension Observation {
     /// Mirrors Apple's `ObservationRegistrar` design but uses stdlib
     /// `Synchronization.Mutex<State>` for thread-safe access — no
     /// platform imports, no platform C types per [PLAT-ARCH-008c]:
-    /// - struct → `Ownership.Shared<Mutex<State>>` heap-allocated extent
+    /// - struct → `Ownership.Immutable<Mutex<State>>` heap-allocated extent
     ///   (CoW shape; ARC-shared across struct copies)
     /// - bidirectional index in ``Observation/Registrar/State``,
     ///   protected by `Mutex<State>`:
@@ -33,11 +33,11 @@ extension Observation {
     /// registrar's heap-extent IS the Subject's stable identity (each
     /// Subject owns one).
     public struct Registrar: Sendable {
-        let _extent: Ownership.Shared<Mutex<State>>
+        let _extent: Ownership.Immutable<Mutex<State>>
 
         /// Creates an empty registrar with a fresh heap-allocated state extent.
         public init() {
-            self._extent = Ownership.Shared(Mutex(State()))
+            self._extent = Ownership.Immutable(Mutex(State()))
         }
     }
 }

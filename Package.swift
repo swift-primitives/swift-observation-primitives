@@ -30,7 +30,7 @@ let package = Package(
             name: "Observation Primitives",
             dependencies: [
                 .product(name: "Tagged Primitives", package: "swift-tagged-primitives"),
-                .product(name: "Ownership Shared Primitives", package: "swift-ownership-primitives"),
+                .product(name: "Ownership Immutable Primitives", package: "swift-ownership-primitives"),
             ]
         ),
         .target(

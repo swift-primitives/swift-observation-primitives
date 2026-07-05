@@ -3,7 +3,7 @@
 extension Observation.Registrar {
     /// Stable identity for this registrar — same value across copies
     /// of the struct (which all share the same heap-allocated
-    /// `Ownership.Shared<Mutex<State>>` extent).
+    /// `Ownership.Immutable<Mutex<State>>` extent).
     ///
     /// L3 consumers (e.g., a tracking primitive that records property
     /// accesses across a body closure) use this `id` as the
