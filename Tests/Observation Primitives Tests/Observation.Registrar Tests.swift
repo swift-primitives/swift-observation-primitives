@@ -21,17 +21,19 @@ final class Box<T: Sendable>: @unchecked Sendable {
     }
 }
 
-@Suite("Observation.Registrar")
-struct RegistrarTests {
-    @Suite struct Subscribe {}
-    @Suite struct WillSet {}
-    @Suite struct DidSet {}
-    @Suite struct WithMutation {}
-    @Suite struct Lifetime {}
-    @Suite struct NoncopyableSubject {}
+extension Observation.Registrar {
+    @Suite("Observation.Registrar")
+    struct Test {
+        @Suite struct Subscribe {}
+        @Suite struct WillSet {}
+        @Suite struct DidSet {}
+        @Suite struct WithMutation {}
+        @Suite struct Lifetime {}
+        @Suite struct NoncopyableSubject {}
+    }
 }
 
-extension RegistrarTests.Subscribe {
+extension Observation.Registrar.Test.Subscribe {
 
     @Test
     func `subscribe returns unique subscription IDs`() {
@@ -77,7 +79,7 @@ extension RegistrarTests.Subscribe {
     }
 }
 
-extension RegistrarTests.WillSet {
+extension Observation.Registrar.Test.WillSet {
 
     @Test
     func `willSet fires registered observer for matching property`() {
@@ -121,7 +123,7 @@ extension RegistrarTests.WillSet {
     }
 }
 
-extension RegistrarTests.DidSet {
+extension Observation.Registrar.Test.DidSet {
 
     @Test
     func `didSet fires registered observer for matching property`() {
@@ -157,7 +159,7 @@ extension RegistrarTests.DidSet {
     }
 }
 
-extension RegistrarTests.WithMutation {
+extension Observation.Registrar.Test.WithMutation {
 
     @Test
     func `withMutation fires willSet then body then didSet`() {
@@ -200,7 +202,7 @@ extension RegistrarTests.WithMutation {
     }
 }
 
-extension RegistrarTests.Lifetime {
+extension Observation.Registrar.Test.Lifetime {
 
     @Test
     func `Registrar copies share the same Extent (CoW handle)`() {
@@ -218,7 +220,7 @@ extension RegistrarTests.Lifetime {
     }
 }
 
-extension RegistrarTests.NoncopyableSubject.Counter {
+extension Observation.Registrar.Test.NoncopyableSubject.Counter {
     var raw: Int {
         _read {
             _$registrar.access(.init(0))
@@ -232,7 +234,7 @@ extension RegistrarTests.NoncopyableSubject.Counter {
     }
 }
 
-extension RegistrarTests.NoncopyableSubject {
+extension Observation.Registrar.Test.NoncopyableSubject {
 
     /// A ~Copyable Subject conforming to `Observable`.
     ///

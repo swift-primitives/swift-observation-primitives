@@ -5,14 +5,16 @@ import Testing
 
 @testable import Observation_Primitives
 
-@Suite("Observation")
-struct ObservationTests {
-    @Suite struct ProtocolConformance {}
-    @Suite struct PropertyID {}
-    @Suite struct SubscriptionID {}
+extension Observation {
+    @Suite("Observation")
+    struct Test {
+        @Suite struct ProtocolConformance {}
+        @Suite struct PropertyID {}
+        @Suite struct SubscriptionID {}
+    }
 }
 
-extension ObservationTests.ProtocolConformance {
+extension Observation.Test.ProtocolConformance {
 
     @Test
     func `Copyable struct can conform to Observable via marker`() {
@@ -47,7 +49,7 @@ extension ObservationTests.ProtocolConformance {
     }
 }
 
-extension ObservationTests.PropertyID {
+extension Observation.Test.PropertyID {
 
     @Test
     func `PropertyID wraps UInt32 raw value`() {
@@ -86,7 +88,7 @@ extension ObservationTests.PropertyID {
     }
 }
 
-extension ObservationTests.SubscriptionID {
+extension Observation.Test.SubscriptionID {
 
     @Test
     func `SubscriptionID wraps UInt64 raw value`() {
