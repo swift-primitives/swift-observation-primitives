@@ -187,7 +187,7 @@ extension RegistrarTests.WithMutation {
             didSet: { _ in didSetFired.mutate { $0 = true } }
         )
 
-        do {
+        do throws(TestError) {
             try registrar.withMutation(of: .init(0)) { () throws(TestError) in
                 throw TestError()
             }
@@ -218,6 +218,20 @@ extension RegistrarTests.Lifetime {
     }
 }
 
+extension RegistrarTests.NoncopyableSubject.Counter {
+    var raw: Int {
+        _read {
+            _$registrar.access(.init(0))
+            yield _raw
+        }
+        _modify {
+            _$registrar.willSet(.init(0))
+            yield &_raw
+            _$registrar.didSet(.init(0))
+        }
+    }
+}
+
 extension RegistrarTests.NoncopyableSubject {
 
     /// A ~Copyable Subject conforming to `Observable`.
@@ -230,18 +244,6 @@ extension RegistrarTests.NoncopyableSubject {
         init() {
             self._$registrar = Observation.Registrar()
             self._raw = 0
-        }
-
-        var raw: Int {
-            _read {
-                _$registrar.access(.init(0))
-                yield _raw
-            }
-            _modify {
-                _$registrar.willSet(.init(0))
-                yield &_raw
-                _$registrar.didSet(.init(0))
-            }
         }
     }
 
